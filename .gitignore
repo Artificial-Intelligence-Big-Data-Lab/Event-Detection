@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+*.rar
+*.zip
+*.csv
+.vscode/settings.json
+DNA and tweets/
+word2vec_data/

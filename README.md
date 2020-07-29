@@ -52,7 +52,7 @@ mongoimport --db financial_forecast --collection sp500_news_2009-2019 --file sp5
 ```
 - run command > 
 ```
-mongoimport --db financial_forecast --collection sp500_tweets_2009-2019 --file sp500_tweets_2009_2019.json --legacy
+mongoimport --db financial_forecast --collection sp500_tweets_2009-2019 --file sp500_tweets_2009-2019.json --legacy
 ```
 - verify on Robo3T that collections have been created successfully
 - on Robo3T command line, run `db.getCollection('sp500_news_2009-2019').createIndex( { ingestion_datetime: 1 } )`

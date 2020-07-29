@@ -1089,7 +1089,7 @@ if __name__ == "__main__":
     
     # algorithms that you want to compare;
     # NOTE: this does not affect the list of algorithms that are used within the ensemble strategy.
-    algorithms_list = ['ensemble', 'kmeans', 'kmedians', 'kmedoids', 'agglomerative']   
+    algorithms_list = ['ensemble', 'kmeans']#, 'kmedians', 'kmedoids', 'agglomerative']   
     
     # you can set this variable to one of these values: None, 'brexit, 'trump'
     # see below for reference
@@ -1118,7 +1118,7 @@ if __name__ == "__main__":
     # please modify the paths to your preference
     elif not event:
         min_date='2017-01-01'
-        max_date='2017-01-06'
+        max_date='2017-01-08'
         test_keywords = []
         folder_name = 'output_clustering/prove/'+datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         os.mkdir(folder_name)

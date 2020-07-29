@@ -18,6 +18,7 @@ For a correct execution of the code, you must download the data (DNA and tweets,
 - lexicons : here you'll find some already computed lexicons; this folder will also be used for new output, in case you decide to create new lexicons. Each subfolder inside "3 classes" is named according to the parameters passed to create the lexicons; similarly, a function in "scripts/create_lexicons.py" uses the same naming system to retrieve the lexicons based on the parameters. Each subfolder contains a list of csv files, each representing the lexicon created for the day indicated in the file name. Read documentation in "scripts/create_lexicons.py" for further reference on the saving system.
 
 - scripts:
+	- output_clustering : subfolder where the output of 'event_detector.py' will be saved. See this function for reference on the saving system.
 	- create_lexicons.py : functions used for creating new lexicons and for fetching previously created lexicons
 	- dunn_index.py : copied from some github repo, useful to compute the dunn index given a clustering
 	- event_detector : main script

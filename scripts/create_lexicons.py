@@ -8,6 +8,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from scipy.sparse import csr_matrix
 from nltk.corpus import stopwords
 from nltk import ngrams
+from tense_detection import filter_senteces
 
 from utils import get_all_ids, get_companies_by_industry, get_market_per_day
 
@@ -120,7 +121,19 @@ def process_tfidf_matrix(matrix, dates, associated_companies, market, last_date,
 Applies preprocessing operations on the text contained in the title, snippet and body of a news, concatenated.
 Returns the processed text
 """
-def process_news_text(news_item, stemming=True, remove_stopwords=True):
+def process_news_text(news_item, stemming=True, remove_stopwords=True, use_tense_detection=False, nlp_model=None):
+    
+    original_text = get_document_text(news_item)
+    if use_tense_detection:
+        original_text = filter_senteces(original_text, nlp_model)
+    text = process_string(original_text, stemming=stemming, remove_stopwords=remove_stopwords)
+    return text
+
+
+"""
+Used by process_news_text.
+"""
+def get_document_text(news_item):
     
     text = ''
     if 'title' in news_item and type(news_item['title']) != type(None):
@@ -129,10 +142,8 @@ def process_news_text(news_item, stemming=True, remove_stopwords=True):
         text = text + news_item['snippet'] + ' '
     if 'body' in news_item and type(news_item['body']) == type('str'):
         text = text + news_item['body'] + ' '
-    
-    text = process_string(text, stemming=stemming, remove_stopwords=remove_stopwords)
     return text
-
+    
 
 """
 Used by process_news_text.

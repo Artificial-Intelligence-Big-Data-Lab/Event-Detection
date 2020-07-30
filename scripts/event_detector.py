@@ -21,6 +21,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import silhouette_samples, silhouette_score, davies_bouldin_score
 from dunn_index import dunn
 import matplotlib.pyplot as plt
+import spacy
 
 from create_lexicons import process_news_text, process_string, create_lexicons, fetch_lexicons, calc_lexicon_match
 from utils import get_all_ids, fetch_previous_news, get_news_per_day, get_market_per_day
@@ -33,6 +34,9 @@ from plotter import plot_clusters, plot_statistics, print_boxplot, plot_price_ch
 # because it is a slow and memory-consuming operation
 with open('../word2vec_data/google_word2vec_sentiment.bin', 'rb') as f:
     WORD_EMBEDDING_MODEL = pickle.load(f)
+    
+# used to filter the senteces of the documents based on the tense detection
+NLP_MODEL = spacy.load('en_core_web_lg')
     
 # If you want to use the classic model, without sentiment adjustment, use this instruction:
 #with open('../word2vec_data/google_word2vec_classic.bin', 'rb') as f:
@@ -98,7 +102,9 @@ Params:
     - relevance_mode : if 'about', retrieves a document iff one of 'companies' is the main focus of the document
                        if 'relevant', retrieves a document if one of 'companies' is somehow relevant to the document
                        if 'both', retrieves a document in one of the two cases above
-                       This parameter depends on DNA metadata; if interested in SP500, simply set this to 'both'.
+                       This parameter depends on DNA metadata; if interested in SP500, simply set this to 'both'
+    - use_tense_detection : if True, filters the sentences in each document, keeping only those that employ at least one
+                            verb in the future tense
                        
 Returns:
     - processed_texts : list of texts, filtered out of stopwords but NOT stemmed 
@@ -108,7 +114,7 @@ Returns:
     - titles : list of titles associated to each document
     - snippets : list of snippets associated to each document
 """
-def organize_documents(documents_array, companies, industry, relevance_mode='both'):
+def organize_documents(documents_array, companies, industry, relevance_mode='both', use_tense_detection=False):
     
     processed_texts = []
     associated_companies = []
@@ -128,8 +134,8 @@ def organize_documents(documents_array, companies, industry, relevance_mode='bot
         #check if at least one of the companies we are interested in is contained in the document-companies
         for c in companies_set:
             if c in companies:
-                text = process_news_text(item, stemming=False, remove_stopwords=True)
-                if text not in processed_texts:   # we need this check, because some tweets have duplicates (spam)
+                text = process_news_text(item, stemming=False, remove_stopwords=True, use_tense_detection=use_tense_detection, nlp_model=NLP_MODEL if use_tense_detection else None)
+                if len(text) > 1 and text not in processed_texts:   # we need this check, because some tweets have duplicates (spam)
                     processed_texts.append(text)
                     if industry == 'SP500':
                         associated_companies.append(companies_set)
@@ -617,6 +623,8 @@ Params:
     - tweet_distance_threshold : threshold used to decide if a tweet should be discarded
       (see function 'assign_tweets_to_clusters'; the parameter is called simply 'distance_threshold')
     - test_keywords (optional) : if not empty, runs the function 'run_keywords_test' (see for reference)
+    - use_tense_detection : if True, filters the sentences in each news (NOT tweets), keeping only those sentences that employ at least one
+                            verb in the future tense
     - path_to_save : if not None, indicates the path to the folder where the daily output should be saved.
       The paths for each day will be created automatically, using this scheme: path_to_save/cluster_algorithm/date.
       So, for example, if you run 'detect_events' several times with different values of 'cluster_algorithm',
@@ -641,7 +649,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
                   min_date='2009-01-01', max_date='2019-01-01', news_look_back=7, tweet_look_back=7, relevance_mode='both',
                   cluster_algorithm='kmeans', k_search_score='silhouette', n_clusters=None, centroid_type='mean',
                   lexicon_filter=True, scale_features=True, outlier_method='silhouette', outlier_cutoff=10, tweet_distance_threshold=0.5,
-                  test_keywords=[], path_to_save=False):
+                  test_keywords=[], use_tense_detection=False, path_to_save=False):
     
     # in case we want to save the output to files, we create a folder named like 'cluster_algorithm',
     # that will contain all the output obtained with this configuration
@@ -660,8 +668,8 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
     all_news = client.financial_forecast.get_collection(news_collection_name).find({'an': {"$in": list(news_ids)}}).sort([('ingestion_datetime',1)])
     all_news = np.array(list(all_news))
     # organize the news in arrays (see organize_documents for reference)          
-    news_processed_texts, news_associated_companies, news_dates, news_ids, news_titles, news_snippets = organize_documents(all_news, companies, industry=industry, relevance_mode=relevance_mode)
-                
+    news_processed_texts, news_associated_companies, news_dates, news_ids, news_titles, news_snippets = organize_documents(all_news, companies, industry=industry, relevance_mode=relevance_mode, use_tense_detection=use_tense_detection)
+                        
     # get all tweets relevant to the companies, in the time interval
     tweet_ids, tweet_dates = get_all_ids(companies=companies, min_date=min_date-timedelta(days=tweet_look_back), max_date=max_date, relevance_mode=relevance_mode, mongo_collection=tweets_collection_name)
     client = pymongo.MongoClient()
@@ -739,11 +747,13 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
                     vocabulary_for_tfidf.append(w)
                     words.append(w)
                     n_words += 1
-                    
-            document_embedding = document_embedding / n_words
+            if n_words > 0:
+                document_embedding = document_embedding / n_words
+            
             document_vectors.append(document_embedding)
         
         document_vectors = np.array(document_vectors)
+                    
         # scale features
         if scale_features:
             document_vectors = RobustScaler().fit_transform(document_vectors)
@@ -773,7 +783,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
             # please note that these metrics are valid only if number of clusters > 1
             silhouette_avg, samples_silhouette_values, silhouette_per_cluster = calc_silhouette(document_vectors, labels)
             dunn_index = calc_dunn(document_vectors, labels)
-            db_score = davies_bouldin_score(document_vectors, labels)   # still another clustering metric; you can ignore it
+#            db_score = davies_bouldin_score(document_vectors, labels)   # still another clustering metric; you can ignore it
             
             print('\nNumber of clusters:', len(original_centroids))
 #            print('Davies-Bouldin score (miniumum 0, the lower the better):', db_score)
@@ -811,7 +821,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
             silhouette_avg, samples_silhouette_values, silhouette_per_cluster = calc_silhouette(document_vectors[is_outlier == 0], 
                                                                                                 labels[is_outlier == 0])
             dunn_index = calc_dunn(document_vectors[is_outlier == 0], labels[is_outlier == 0])
-            db_score = davies_bouldin_score(document_vectors[is_outlier == 0], labels[is_outlier == 0])
+#            db_score = davies_bouldin_score(document_vectors[is_outlier == 0], labels[is_outlier == 0])
             
             print('\nAFTER DENOISING:')
 #            print('Davies-Bouldin score (miniumum 0, the lower the better):', db_score)
@@ -1152,7 +1162,7 @@ if __name__ == "__main__":
                                 positive_lexicons=pos_lexicons, negative_lexicons=neg_lexicons,
                                 min_date=min_date, max_date=max_date, news_look_back=7, tweet_look_back=7, relevance_mode='both', scale_features=True,
                                 cluster_algorithm=ca, n_clusters=None, k_search_score='silhouette', centroid_type='median',
-                                outlier_cutoff=25, outlier_method='silhouette+proximity',
+                                outlier_cutoff=25, outlier_method='silhouette+proximity', use_tense_detection=False,
                                 lexicon_filter=True, tweet_distance_threshold=0.5, test_keywords=test_keywords,
                                 path_to_save=path_to_save)
         

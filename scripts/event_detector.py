@@ -684,7 +684,11 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
     metrics_per_day = {}
     
     # initialize the dict that will contain the important words to train the CNN
-    words_per_day = {}
+    relevant_words_per_day = {}
+    
+    # initialize the dict that will contain all the words used on each day 
+    # (the super-lexicon can be created as the union of all these lists)
+    all_words_per_day = {}
     
     # iterate over the time interval between min_date and max_date
     current_date = min_date
@@ -848,17 +852,15 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
         # It is useful to add the word-embeddings of the individual words because, even though we will never plot them,
         # they make the TSNE model more stable and improve the quality of the 2D aproximation.
         # See function 'plot_clusters' for further reference.
-        vocabulary_word_embeddings = np.array([WORD_EMBEDDING_MODEL[w] for w in vocabulary_for_tfidf])
-        all_centroids = np.append(original_centroids, centroids, axis=0)
-        ndimensional_vectors = np.append(document_vectors, all_centroids, axis=0)
-        ndimensional_vectors = np.append(vocabulary_word_embeddings, ndimensional_vectors, axis = 0)
-        vectors_2D = TSNE(n_components=2, metric='cosine', perplexity=30, early_exaggeration=3).fit_transform(ndimensional_vectors)
-        vocabulary_tsne_vectors = vectors_2D[:len(vocabulary_word_embeddings)]
-        vocabulary_tsne = {w:t for w,t in zip(vocabulary_for_tfidf, vocabulary_tsne_vectors)}
-        document_vectors_2D = vectors_2D[len(vocabulary_word_embeddings):len(vocabulary_word_embeddings)+len(document_vectors)]
-        old_centroids_2D = vectors_2D[len(vocabulary_word_embeddings)+len(document_vectors):-len(centroids)]
-        new_centroids_2D = vectors_2D[-len(centroids):]
         if path_to_save:
+            vocabulary_word_embeddings = np.array([WORD_EMBEDDING_MODEL[w] for w in vocabulary_for_tfidf])
+            all_centroids = np.append(original_centroids, centroids, axis=0)
+            ndimensional_vectors = np.append(document_vectors, all_centroids, axis=0)
+            ndimensional_vectors = np.append(vocabulary_word_embeddings, ndimensional_vectors, axis = 0)
+            vectors_2D = TSNE(n_components=2, metric='cosine', perplexity=30, early_exaggeration=3).fit_transform(ndimensional_vectors)
+            document_vectors_2D = vectors_2D[len(vocabulary_word_embeddings):len(vocabulary_word_embeddings)+len(document_vectors)]
+            old_centroids_2D = vectors_2D[len(vocabulary_word_embeddings)+len(document_vectors):-len(centroids)]
+            new_centroids_2D = vectors_2D[-len(centroids):]
             if outlier_method and cluster_algorithm != 'dbscan':
                 plot_clusters(document_vectors_2D, old_centroids_2D, labels, path_to_save=full_path_to_save, chosen_algorithm=chosen_algorithm)
             plot_clusters(document_vectors_2D, new_centroids_2D, labels, is_outlier=is_outlier, plot_outliers=False, path_to_save=full_path_to_save, chosen_algorithm=chosen_algorithm)
@@ -1085,14 +1087,17 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
             plot_statistics(n_news_per_cluster, n_news_per_cluster_per_date, perc_news_per_cluster_per_date, discarded_news_per_date, perc_discarded_news_per_date, total_news_per_date,
                             n_tweets_per_cluster, n_tweets_per_cluster_per_date, perc_tweets_per_cluster_per_date, discarded_tweets_per_date, perc_discarded_tweets_per_date, total_tweets_per_date,
                             pos_lexicon_match_per_cluster, neg_lexicon_match_per_cluster, silhouette_per_cluster, silhouette_avg, dunn_index, 
-                            cluster_companies, cluster_relevant_words_tfidf, vocabulary_tsne,
+                            cluster_companies, cluster_relevant_words_tfidf,
                             keywords_in_relevant_words=keywords_in_relevant_words_tfidf, keywords_in_titles=keywords_in_titles, 
                             keywords_in_snippets=keywords_in_snippets, relevant_words_match=relevant_words_match,
                             date_range=[current_date - timedelta(days=x) for x in range(news_look_back,0,-1)],
                             path_to_save=full_path_to_save)
         
+        # we save all the words used on the current date, filtered with the lexicon
+        all_words_per_day[current_date] = vocabulary_for_tfidf
+        
         # we extract the words from each cluster 
-        words_per_day[current_date] = {}
+        relevant_words_per_day[current_date] = {}
         for c in range(len(centroids)):
             # a cluster gives contribution only if it has tweets assigned in the last day and (=> the event is hot)
             if perc_tweets_per_cluster_per_date[c][-1] > 0 :
@@ -1102,13 +1107,13 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
                     #   - the percentage of tweets assigned to the cluster it belongs to
                     #   - the score in the specialized lexicon
                     stemmed_w = pproc.stem(w)
-                    words_per_day[current_date][w] = {'relevance_to_cluster': s,
+                    relevant_words_per_day[current_date][w] = {'relevance_to_cluster': s,
                                                       'tweets_percentage' : perc_tweets_per_cluster_per_date[c][-1],
                                                       'lexicon_score' : current_pos_lexicon[stemmed_w] if stemmed_w in current_pos_lexicon else current_neg_lexicon[stemmed_w]}
             
         current_date = current_date + timedelta(days=1)
     
-    return metrics_per_day, words_per_day
+    return metrics_per_day, relevant_words_per_day, all_words_per_day
 
 
 if __name__ == "__main__":
@@ -1118,7 +1123,7 @@ if __name__ == "__main__":
     
     # algorithms that you want to compare;
     # NOTE: this does not affect the list of algorithms that are used within the ensemble strategy.
-    algorithms_list = ['ensemble']#, 'kmedians', 'kmedoids', 'agglomerative']   
+    algorithms_list = ['ensemble']#, 'kmeans', 'kmedians', 'kmedoids', 'agglomerative']   
     
     # you can set this variable to one of these values: None, 'brexit, 'trump'
     # see below for reference
@@ -1178,18 +1183,21 @@ if __name__ == "__main__":
     # NOTE: global variable INITIAL_CENTROIDS ensures that, on a given day, the output of the kmeans component of ensemble (when cluster_algorithm == 'ensemble)
     # will be the same as the one obtained on the execution of 'detect_events' in which cluster_algorithm == 'kmeans'
     for ca in algorithms_list:
-        metrics, words = detect_events(industry=industry, companies=companies, news_collection_name=news_collection_name, tweets_collection_name=tweets_collection_name,
-                                       positive_lexicons=pos_lexicons, negative_lexicons=neg_lexicons,
-                                       min_date=min_date, max_date=max_date, news_look_back=7, tweet_look_back=7, relevance_mode='both', scale_features=True,
-                                       cluster_algorithm=ca, n_clusters=None, k_search_score='silhouette', centroid_type='median',
-                                       outlier_cutoff=25, outlier_method='silhouette+proximity', use_tense_detection=False,
-                                       lexicon_filter=True, tweet_distance_threshold=0.5, test_keywords=test_keywords,
-                                       path_to_save=path_to_save)
+        metrics, relevant_words, all_words = detect_events(industry=industry, companies=companies, news_collection_name=news_collection_name, tweets_collection_name=tweets_collection_name,
+                                                           positive_lexicons=pos_lexicons, negative_lexicons=neg_lexicons,
+                                                           min_date=min_date, max_date=max_date, news_look_back=7, tweet_look_back=7, relevance_mode='both', scale_features=True,
+                                                           cluster_algorithm=ca, n_clusters=None, k_search_score='silhouette', centroid_type='median',
+                                                           outlier_cutoff=25, outlier_method='silhouette+proximity', use_tense_detection=False,
+                                                           lexicon_filter=True, tweet_distance_threshold=0.5, test_keywords=test_keywords,
+                                                           path_to_save=None)
         
         if save_words_for_CNN:
             with open('../words_for_CNN/'+ca+'_from_'+min_date+'_to_'+max_date+'.csv', 'w') as word_writer:
-                for date in words:
-                    word_writer.write(date.strftime('%Y-%m-%d')+'\t'+str(words[date])+'\n')
+                for date in relevant_words:
+                    word_writer.write(date.strftime('%Y-%m-%d')+'\t'+str(relevant_words[date])+'\n')
+            with open('../words_for_super_lexicon/from_'+min_date+'_to_'+max_date+'.csv', 'w') as word_writer:
+                for date in all_words:
+                    word_writer.write(date.strftime('%Y-%m-%d')+'\t'+str(all_words[date])+'\n')
                 
         for date in metrics:
             if date not in global_metrics_per_day:
@@ -1203,10 +1211,15 @@ if __name__ == "__main__":
                 chosen_algorithm_count[metrics[date]['chosen_algorithm']] += 1
             
     if save_clustering_output:
+        
         # print the plot of discarded tweets on each day, highlighting only the dates where the rate is below 97% (hardcoded below)
         min_date = datetime.strptime(min_date, '%Y-%m-%d').date()
         max_date = datetime.strptime(max_date, '%Y-%m-%d').date()
         for alg in algorithms_list:
+            
+            if alg not in os.listdir(path_to_save):
+                os.mkdir(path_to_save + '/' + alg)
+            
             labels_for_discarded = []
             os.mkdir(path_to_save+'/'+alg+'/price_plots_on_events')
             with open(path_to_save+'/'+alg+'/percentage of discarded TWEETS per day, detailed.csv', 'w') as writer:

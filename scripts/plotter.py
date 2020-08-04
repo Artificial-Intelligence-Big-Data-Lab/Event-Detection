@@ -341,6 +341,7 @@ def print_boxplot(scores_by_algorithm, algorithms_list, title, path_to_save=None
     ax.set_xticks(x)
     ax.set_xticklabels([alg + '\n(Avg: '+str(round(np.average(scores_by_algorithm[alg]),2))+')' for alg in algorithms_list])
     ax.set_title(title)
-    plt.savefig(path_to_save)
+    if path_to_save:
+        plt.savefig(path_to_save)
     plt.close()
         

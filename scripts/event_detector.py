@@ -622,6 +622,7 @@ Params:
       (see function 'find_outliers' for reference)
     - tweet_distance_threshold : threshold used to decide if a tweet should be discarded
       (see function 'assign_tweets_to_clusters'; the parameter is called simply 'distance_threshold')
+    - n_top_words : how many words should be considered as relevant for each cluster, picking from the ranked list of words
     - test_keywords (optional) : if not empty, runs the function 'run_keywords_test' (see for reference)
     - use_tense_detection : if True, filters the sentences in each news (NOT tweets), keeping only those sentences that employ at least one
                             verb in the future tense
@@ -649,7 +650,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
                   min_date='2009-01-01', max_date='2019-01-01', news_look_back=7, tweet_look_back=7, relevance_mode='both',
                   cluster_algorithm='kmeans', k_search_score='silhouette', n_clusters=None, centroid_type='mean',
                   lexicon_filter=True, scale_features=True, outlier_method='silhouette', outlier_cutoff=10, tweet_distance_threshold=0.5,
-                  test_keywords=[], use_tense_detection=False, path_to_save=False):
+                  n_top_words=30, test_keywords=[], use_tense_detection=False, path_to_save=False):
     
     # in case we want to save the output to files, we create a folder named like 'cluster_algorithm',
     # that will contain all the output obtained with this configuration
@@ -681,6 +682,9 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
 
     # initialize the dict that will contain the daily metrics
     metrics_per_day = {}
+    
+    # initialize the dict that will contain the important words to train the CNN
+    words_per_day = {}
     
     # iterate over the time interval between min_date and max_date
     current_date = min_date
@@ -723,8 +727,8 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
             full_path_to_save = None
         
         # retrieve the lexicons for the current day
-        current_pos_lexicon = [w for w,s in positive_lexicons[current_date]] 
-        current_neg_lexicon = [w for w,s in negative_lexicons[current_date]]
+        current_pos_lexicon = {w:s for w,s in positive_lexicons[current_date]}
+        current_neg_lexicon = {w:s for w,s in negative_lexicons[current_date]}
         print('\n\n********************************')
         print(current_date)
         
@@ -741,7 +745,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
             n_words = 0
             words = []
             for w in d.split():
-                if ((not lexicon_filter or (lexicon_filter and pproc.stem(w) in (current_pos_lexicon + current_neg_lexicon))) 
+                if ((not lexicon_filter or (lexicon_filter and pproc.stem(w) in (list(current_pos_lexicon.keys()) + list(current_neg_lexicon.keys())))) 
                     and (w in WORD_EMBEDDING_MODEL)):
                     document_embedding += WORD_EMBEDDING_MODEL[w]
                     vocabulary_for_tfidf.append(w)
@@ -907,8 +911,8 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
         pos_lexicon_match_per_cluster = [0 for c in range(len(centroids))]
         neg_lexicon_match_per_cluster = [0 for c in range(len(centroids))]      
         for c in range(len(centroids)):
-            pos_lexicon_match_per_cluster[c] = calc_lexicon_match(cluster_stemmed_documents[c], current_pos_lexicon)
-            neg_lexicon_match_per_cluster[c] = calc_lexicon_match(cluster_stemmed_documents[c], current_neg_lexicon)
+            pos_lexicon_match_per_cluster[c] = calc_lexicon_match(cluster_stemmed_documents[c], list(current_pos_lexicon.keys()))
+            neg_lexicon_match_per_cluster[c] = calc_lexicon_match(cluster_stemmed_documents[c], list(current_neg_lexicon.keys()))
             
             # compute the average td-idf vector for each cluster, by averaging the tf-idf vectors of all the news of the cluster
             cluster_tfidf[c] = cluster_tfidf[c] / len(cluster_articles[c])
@@ -968,7 +972,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
         (tweet_ids_per_cluster, tweet_dates_per_cluster, tweet_texts_per_cluster,
          tweet_vectors_per_cluster, tweet_distances_per_cluster, tweet_labels) = assign_tweets_to_clusters(selected_tweets_processed_texts, selected_tweets_original_texts, 
                                                                                                            selected_tweets_dates, selected_tweets_ids, centroids,
-                                                                                                           lexicon = current_neg_lexicon + current_pos_lexicon, 
+                                                                                                           lexicon = list(current_neg_lexicon.keys()) + list(current_pos_lexicon.keys()), 
                                                                                                            lexicon_filter=lexicon_filter,
                                                                                                            distance_threshold=tweet_distance_threshold, 
                                                                                                            scale_features=scale_features)
@@ -1022,10 +1026,10 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
         relevant_words_match = [[] for c in range(len(centroids))]
         for c in range(len(centroids)):
             match = 0
-            for w,s in tweets_cluster_relevant_words_tfidf[c][:30]:
-                if pproc.stem(w) in [pproc.stem(v) for v,t in cluster_relevant_words_tfidf[c]][:30]:
+            for w,s in tweets_cluster_relevant_words_tfidf[c][:n_top_words]:
+                if pproc.stem(w) in [pproc.stem(v) for v,t in cluster_relevant_words_tfidf[c]][:n_top_words]:
                     match += 1
-            match = 100 * (match / 30)
+            match = 100 * (match / n_top_words)
             relevant_words_match[c] = match
 
         # run keywords test (see function for reference)
@@ -1042,10 +1046,10 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
                     for i,date,title,snippet,dist in cluster_articles[c]:
                         writer.write(title + '\n' + str(date) + '\tDist. from centroid: ' + str(dist) + '\n\n')
             
-            with open(full_path_to_save + '/7. NEWS top 30 words per cluster (tf-idf scores on news).txt', 'w') as writer:
+            with open(full_path_to_save + '/7. NEWS top '+ str(n_top_words) +' words per cluster (tf-idf scores on news).txt', 'w') as writer:
                 for c in range(len(cluster_relevant_words_tfidf)):
                     writer.write('\n\n\n*** Cluster #' + str(c) + '***\n')
-                    for w,s in cluster_relevant_words_tfidf[c][:30]:
+                    for w,s in cluster_relevant_words_tfidf[c][:n_top_words]:
                         writer.write(w + '\t' + str(s) + '\n')
                 
             with open(full_path_to_save + '/10. attached tweet per cluster.txt', 'w', encoding='utf-8') as writer:
@@ -1057,10 +1061,10 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
                         except UnicodeEncodeError:
                             continue
             
-            with open(full_path_to_save + '/11. tweet top 30 words per cluster (tf-idf scores on tweets).txt', 'w') as writer:
+            with open(full_path_to_save + '/11. tweet top '+str(n_top_words)+' words per cluster (tf-idf scores on tweets).txt', 'w') as writer:
                 for c in range(len(tweets_cluster_relevant_words_tfidf)):
                     writer.write('\n\n\n*** Cluster #' + str(c) + '***\n')
-                    for w,s in tweets_cluster_relevant_words_tfidf[c][:30]:
+                    for w,s in tweets_cluster_relevant_words_tfidf[c][:n_top_words]:
                         writer.write(w + '\t' + str(s) + '\n')
              
             with open(path_to_save + '/_parameters.txt', 'w') as w:
@@ -1087,19 +1091,34 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
                             date_range=[current_date - timedelta(days=x) for x in range(news_look_back,0,-1)],
                             path_to_save=full_path_to_save)
         
-    
+        # we extract the words from each cluster 
+        words_per_day[current_date] = {}
+        for c in range(len(centroids)):
+            # a cluster gives contribution only if it has tweets assigned in the last day and (=> the event is hot)
+            if perc_tweets_per_cluster_per_date[c][-1] > 0 :
+                for w,s in cluster_relevant_words_tfidf[c][:n_top_words]:
+                    # every word is assigned 3 different values:
+                    #   - the relevance to the cluster it belongs to, calculated through tf-idf
+                    #   - the percentage of tweets assigned to the cluster it belongs to
+                    #   - the score in the specialized lexicon
+                    stemmed_w = pproc.stem(w)
+                    words_per_day[current_date][w] = {'relevance_to_cluster': s,
+                                                      'tweets_percentage' : perc_tweets_per_cluster_per_date[c][-1],
+                                                      'lexicon_score' : current_pos_lexicon[stemmed_w] if stemmed_w in current_pos_lexicon else current_neg_lexicon[stemmed_w]}
+            
         current_date = current_date + timedelta(days=1)
     
-    return metrics_per_day
+    return metrics_per_day, words_per_day
 
 
 if __name__ == "__main__":
     
-    save = True         #True if you want to save the output to files
+    save_clustering_output = False         #True if you want to save the output to files
+    save_words_for_CNN = True
     
     # algorithms that you want to compare;
     # NOTE: this does not affect the list of algorithms that are used within the ensemble strategy.
-    algorithms_list = ['ensemble', 'kmeans']#, 'kmedians', 'kmedoids', 'agglomerative']   
+    algorithms_list = ['ensemble']#, 'kmedians', 'kmedoids', 'agglomerative']   
     
     # you can set this variable to one of these values: None, 'brexit, 'trump'
     # see below for reference
@@ -1127,14 +1146,15 @@ if __name__ == "__main__":
     # a folder with the datetime of the moment of the execution will be created automatically inside output_clustering/prove
     # please modify the paths to your preference
     elif not event:
-        min_date='2017-01-01'
-        max_date='2017-01-08'
+        min_date='2016-11-01'
+        max_date='2016-11-30'
         test_keywords = []
-        folder_name = 'output_clustering/prove/'+datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        os.mkdir(folder_name)
-        path_to_save = folder_name
+        if save_clustering_output:
+            folder_name = 'output_clustering/prove/'+datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            os.mkdir(folder_name)
+            path_to_save = folder_name
     
-    if not save:
+    if not save_clustering_output:
         path_to_save = None
     
     # Retrieve the lexicons with the desired parameters.
@@ -1158,14 +1178,19 @@ if __name__ == "__main__":
     # NOTE: global variable INITIAL_CENTROIDS ensures that, on a given day, the output of the kmeans component of ensemble (when cluster_algorithm == 'ensemble)
     # will be the same as the one obtained on the execution of 'detect_events' in which cluster_algorithm == 'kmeans'
     for ca in algorithms_list:
-        metrics = detect_events(industry=industry, companies=companies, news_collection_name=news_collection_name, tweets_collection_name=tweets_collection_name,
-                                positive_lexicons=pos_lexicons, negative_lexicons=neg_lexicons,
-                                min_date=min_date, max_date=max_date, news_look_back=7, tweet_look_back=7, relevance_mode='both', scale_features=True,
-                                cluster_algorithm=ca, n_clusters=None, k_search_score='silhouette', centroid_type='median',
-                                outlier_cutoff=25, outlier_method='silhouette+proximity', use_tense_detection=False,
-                                lexicon_filter=True, tweet_distance_threshold=0.5, test_keywords=test_keywords,
-                                path_to_save=path_to_save)
+        metrics, words = detect_events(industry=industry, companies=companies, news_collection_name=news_collection_name, tweets_collection_name=tweets_collection_name,
+                                       positive_lexicons=pos_lexicons, negative_lexicons=neg_lexicons,
+                                       min_date=min_date, max_date=max_date, news_look_back=7, tweet_look_back=7, relevance_mode='both', scale_features=True,
+                                       cluster_algorithm=ca, n_clusters=None, k_search_score='silhouette', centroid_type='median',
+                                       outlier_cutoff=25, outlier_method='silhouette+proximity', use_tense_detection=False,
+                                       lexicon_filter=True, tweet_distance_threshold=0.5, test_keywords=test_keywords,
+                                       path_to_save=path_to_save)
         
+        if save_words_for_CNN:
+            with open('../words_for_CNN/'+ca+'_from_'+min_date+'_to_'+max_date+'.csv', 'w') as word_writer:
+                for date in words:
+                    word_writer.write(date.strftime('%Y-%m-%d')+'\t'+str(words[date])+'\n')
+                
         for date in metrics:
             if date not in global_metrics_per_day:
                 global_metrics_per_day[date] = {}
@@ -1177,7 +1202,7 @@ if __name__ == "__main__":
             if ca == 'ensemble':
                 chosen_algorithm_count[metrics[date]['chosen_algorithm']] += 1
             
-    if save:
+    if save_clustering_output:
         # print the plot of discarded tweets on each day, highlighting only the dates where the rate is below 97% (hardcoded below)
         min_date = datetime.strptime(min_date, '%Y-%m-%d').date()
         max_date = datetime.strptime(max_date, '%Y-%m-%d').date()

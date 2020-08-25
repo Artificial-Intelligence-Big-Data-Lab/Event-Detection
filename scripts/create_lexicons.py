@@ -162,6 +162,7 @@ def process_string(string, stemming=True, remove_stopwords=True):
     string = string.strip()
     return string
 
+
 """
 Loads from file and returns the lexicons defined by the parameters passed by the fuction, IF AND ONLY IF such lexicon was previously created
 and saved to a file.
@@ -279,11 +280,11 @@ def create_lexicons(industry, collection_name, min_date='2009-01-01', max_date='
                     excluded_words=False, save_in_file=False):
     
     if save_in_file:
-        if industry == 'SP500':
-            min_date = '2009-10-01'
-        else:
-            min_date = '2005-01-01'
-        max_date = '2018-01-01'
+#        if industry == 'SP500':
+#            min_date = '2009-10-01'
+#        else:
+#            min_date = '2005-01-01'
+#        max_date = '2018-01-01'
         print('\nWill create and save lexicons from',min_date,'to',max_date)
         folder_name = (industry + '_' + type_of_lexicon + '_lookback_' + str(look_back) + '_ngrams_' + str(ngram_range) + '_stemming_' + str(stemming) 
                         + '_remove_stopwords_' + str(remove_stopwords) + '_max_df_' + str(max_df) + '_min_df_' + str(min_df) + ('_excluded_words' if excluded_words else ''))
@@ -379,15 +380,16 @@ def create_lexicons(industry, collection_name, min_date='2009-01-01', max_date='
         matrix_avg /= nonzeros
                 
         sorted_indices = np.asarray(matrix_avg.argsort()[::-1])
-
+#        print(sorted_indices)
         ranked_words = [(features[i], matrix_avg[i]) for i in sorted_indices if not np.isnan(matrix_avg[i])]
-
+        
         if save_in_file:
             with open('../lexicons/'+subfolder+'/' + folder_name + '/' + str(current_date) + '.csv', 'w') as writer:
                 for word,score in ranked_words:
                     writer.write(word + ',' + str(score) + '\n')
         
         scores = [s for w,s in ranked_words]
+        
 
         positive_upper_bound = np.percentile(scores, positive_percentile_range[1])
         positive_lower_bound = np.percentile(scores, positive_percentile_range[0])
@@ -406,13 +408,12 @@ def create_lexicons(industry, collection_name, min_date='2009-01-01', max_date='
                 
 
 if __name__ == "__main__":
-    pos_lexicons, neg_lexicons = create_lexicons(industry='Information Technology', 
-                                                 collection_name='Information Technology_news_2000-2019',
-                                                 min_date='2002-01-01', max_date='2019-01-01', look_back=40,
+    pos_lexicons, neg_lexicons = create_lexicons(industry='SP500', 
+                                                 collection_name='sp500_news_2009-2020',
+                                                 min_date='2019-01-01', max_date='2020-05-01', look_back=28,
                                                  ngram_range=(1,1), stemming=True, remove_stopwords=True,
-                                                 type_of_lexicon='only_abs_delta',
-                                                 positive_percentile_range=(90,100), negative_percentile_range=(0,0),
-                                                 max_df=0.8, min_df=10, save_in_file=False)
+                                                 positive_percentile_range=(80,100), negative_percentile_range=(0,20),
+                                                 max_df=0.9, min_df=10, save_in_file=True)
     
     for d in pos_lexicons:
         print()

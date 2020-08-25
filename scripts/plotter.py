@@ -53,7 +53,7 @@ Prints or saves (if path_to_save' is not None) the charts of metrics obtained by
 def plot_statistics(n_news_per_cluster, n_news_per_cluster_per_date, perc_news_per_cluster_per_date, discarded_news_per_date, perc_discarded_news_per_date, total_news_per_date,
                     n_tweets_per_cluster, n_tweets_per_cluster_per_date, perc_tweets_per_cluster_per_date, discarded_tweets_per_date, perc_discarded_tweets_per_date, total_tweets_per_date,
                     pos_lexicon_match_per_cluster, neg_lexicon_match_per_cluster, silhouette_per_cluster, silhouette_avg, dunn_index, 
-                    cluster_companies, cluster_relevant_words, vocabulary_tsne, 
+                    cluster_companies, cluster_relevant_words, 
                     keywords_in_relevant_words=[], keywords_in_snippets=[], keywords_in_titles=[], relevant_words_match=[], date_range=[],
                     path_to_save=None):
     
@@ -309,16 +309,16 @@ def plot_clusters(vectors_2D, centroids_2D, labels, is_outlier=[], plot_outliers
         indices = [k for k in range(len(labels)) if labels[k] == l and is_outlier[k] == 0]
         ax.scatter(vectors_2D[indices,0], vectors_2D[indices,1], c=ALL_COLORS[l], label='Cluster #'+str(l))    
         if len(indices) > 0:
-            ax.scatter(centroids_2D[c,0], centroids_2D[c,1], s=50, c=ALL_COLORS[l], marker='+')
+            ax.scatter(centroids_2D[c,0], centroids_2D[c,1], s=100, c=ALL_COLORS[l], marker='+')
     
     if is_outlier.any():
         if plot_outliers:
             outlier_indices = [k for k in range(len(labels)) if is_outlier[k] == 1]
             ax.scatter(vectors_2D[outlier_indices,0], vectors_2D[outlier_indices,1], c='black', label='outliers')
-        title = 'Clustering after outlier removal - ' + chosen_algorithm
+        title = 'Clustering after outlier removal'
         file_name = '2. clustering after outlier removal.png'
     else:
-        title = 'Original clustering - ' + chosen_algorithm
+        title = 'Original clustering'
         file_name = '1. original clustering.png'
         
     ax.set_title(title)
@@ -337,7 +337,7 @@ def print_boxplot(scores_by_algorithm, algorithms_list, title, path_to_save=None
     
     x = [2*k for k in range(len(algorithms_list))]
     fig, ax = plt.subplots()
-    ax.boxplot([scores_by_algorithm[alg] for alg in algorithms_list], widths=0.6, positions=x, whis=[25,75])
+    ax.boxplot([scores_by_algorithm[alg] for alg in algorithms_list], widths=0.6, positions=x)
     ax.set_xticks(x)
     ax.set_xticklabels([alg + '\n(Avg: '+str(round(np.average(scores_by_algorithm[alg]),2))+')' for alg in algorithms_list])
     ax.set_title(title)

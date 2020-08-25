@@ -3,6 +3,40 @@ from datetime import datetime, timedelta
 import pymongo, pandas
 import numpy as np
 
+
+TEST_KEYWORDS_DICT = {
+                      '2016-06-23' : ['brexit', 'uk', 'british', 'referendum', 'poll', 'stay', 'leave', 'eu', 'vote', 'remain'],
+                      '2016-11-08' : ['trump','us','american', 'clinton','hillary','vote','election','poll','presidential','president'],
+#                      '2017-01-26' : ['trump', 'order', 'mexico', 'wall', 'build', 'immigration', 'immigrant', 'illegal', 'clandestine', 'border'],
+#                      '2017-03-23' : ['london', 'bridge', 'attack', 'terrorist', 'terrorism', 'westminster', 'car', 'kill', 'victim', 'dead'],
+                      '2017-05-08' : ['france', 'election', 'win', 'macron', 'french', 'vote', 'president', 'presidential', 'first', 'round'],
+#                      '2017-05-23' : ['ariana', 'grande', 'concert', 'manchester', 'terrorist', 'terrorism', 'attack', 'explosion', 'bomb', 'arena'],
+                      '2017-06-09' : ['may', 'win', 'british', 'election', 'uk', 'vote', 'poll', 'corbyn', 'prime', 'minister'],
+#                      '2017-10-23' : ['shinzo', 'abe', 'win', 'confidence', 'vote', 'japan', 'election', 'prime', 'minister', 'president'],
+                      '2017-11-03' : ['trump', 'jerome', 'powell', 'new', 'fed', 'chairman', 'announce', 'become', 'federal', 'reserve'],
+                      '2018-02-06' : ['volatility', 'index', 'vix', 'blow', 'stock', 'market', 'equity', 'return', 'invest', 'investment'],
+                      '2018-03-03' : ['trump', 'trade', 'steel', 'aluminium', 'tariff', 'market', 'buy', 'sell', 'export', 'import'],
+                      '2018-03-18' : ['facebook', 'cambridge', 'analytica', 'scandal', 'data', 'leak', 'zuckerberg', 'trump', 'campaign', 'advertisment'],
+#                      '2018-03-20' : ['putin', 'win', 'russia', 'russian', 'election', 'vote', 'president', 'margin', 'victory', 'presidential'],
+                      '2018-05-09' : ['trump', 'announce', 'withdrawal', 'iran', 'deal', 'nuclear', 'energy', 'united', 'states', 'tehran'],
+                      '2018-06-07' : ['panic','italy','italian','new','government','populist','election','poll','establishment','eu'],
+                      '2018-06-16' : ['trump','announce','tariff','china','trade','stock','market','war','industry','good'],
+                      '2018-07-27' : ['facebook','stock','market','plunge','drop','data','leak','scandal','revenue','billion'],
+                      '2018-09-05' : ['amazon','bezos','trillion','market','stock','cap','revenue','company','value','invest'],
+                      '2018-11-22' : ['apple','drop','plunge','stock','market','value','revenue','billion','share','fall'],
+                      '2018-12-03' : ['us','trump','china','temporary','truce','tariff','trade','war','market','industry'],
+                      '2018-12-05' : ['huawei','cfo','arrest','meng','wanzhou','extradiction','extradite','trade','company','stock'],
+                      '2018-12-15' : ['us','trump','china','lower','truce','tariff','trade','car','autos','industry'],
+                      '2019-01-16' : ['brexit','parliament','vote','defeat','may','johnson','eu','leave','remain','deal'],
+#                      '2019-03-23' : ['yield','curve','invert','inversion','recession','treasury','return','stock','market','bond'],
+                      '2019-05-13' : ['china','us','trump','tariff','trade','war','deal','market','industry','beijing'],
+                      '2019-08-01' : ['fed','cut','rate','point','base','federal','reserve','powell','quarter','risk'],
+#                      '2019-10-10' : ['turkey','turkish','syria','syrian','offensive','military','attack','death','civilian','launch'],
+                      '2019-12-13' : ['china','us','tariffs','agreement','deal','trump','phase','trade','war','beijing'],
+                      '2019-12-19' : ['us','president','trump','impeached','impeachment','congress','house','representatives','abuse','power'],
+                      '2020-02-01' : ['coronavirus','virus','outbreak','china','chinese','death','infected','desease','loss','spread']
+                      }
+
 """
 Get the ids ('an' field in the json documents) and the dates of all the news included in the specified time interval, where
 at least on of the companies passed as parameter is relevant.

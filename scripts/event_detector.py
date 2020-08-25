@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import spacy
 
 from create_lexicons import process_news_text, process_string, create_lexicons, fetch_lexicons, calc_lexicon_match
-from utils import get_all_ids, fetch_previous_news, get_news_per_day, get_market_per_day
+from utils import get_all_ids, fetch_previous_news, get_news_per_day, get_market_per_day, TEST_KEYWORDS_DICT
 from plotter import plot_clusters, plot_statistics, print_boxplot, plot_price_chart
 
 # We employ a word-embedding model pre-trained on Google news and adjusted in such a way, that
@@ -36,7 +36,8 @@ with open('../word2vec_data/google_word2vec_sentiment.bin', 'rb') as f:
     WORD_EMBEDDING_MODEL = pickle.load(f)
     
 # used to filter the senteces of the documents based on the tense detection
-NLP_MODEL = spacy.load('en_core_web_lg')
+#NLP_MODEL = spacy.load('en_core_web_lg')
+NLP_MODEL = None
     
 # If you want to use the classic model, without sentiment adjustment, use this instruction:
 #with open('../word2vec_data/google_word2vec_classic.bin', 'rb') as f:
@@ -63,32 +64,67 @@ The length is arbitrary.
 """
 def run_keywords_test(cluster_relevant_words, cluster_articles, test_keywords, n_top_words=10):
     
+    stemmed_test_keywords = list(set([pproc.stem(w) for w in test_keywords]))
+        
     keywords_in_relevant_words = [0 for c in range(len(cluster_relevant_words))]
     keywords_in_titles = [0 for c in range(len(cluster_relevant_words))]
     keywords_in_snippets = [0 for c in range(len(cluster_relevant_words))]
     for c in range(len(cluster_relevant_words)):
-        keywords_in_relevant_words[c] = 100 * (sum([1 for w,s in cluster_relevant_words[c][:n_top_words] if w in test_keywords]) / n_top_words)
-        cluster_titles = [process_string(title, stemming=False) for i,date,title,snippet,dist in cluster_articles[c]]
+        stemmed_relevant_words = []
+        for w,s in cluster_relevant_words[c]:
+            sw = pproc.stem(w)
+            if sw not in stemmed_relevant_words:
+                stemmed_relevant_words.append(sw)
+            if len(stemmed_relevant_words) >= n_top_words:
+                break
+    
+        keywords_in_relevant_words[c] = 100 * (sum([1 for w in stemmed_relevant_words if w in stemmed_test_keywords]) / n_top_words)
+        cluster_titles = [process_string(title, stemming=True) for i,date,title,snippet,dist in cluster_articles[c]]
         keywords_in_titles[c] = 0
         for title in cluster_titles:
-
-            for tk in test_keywords:
+            for tk in stemmed_test_keywords:
                 if tk in title:
                     keywords_in_titles[c] += 1
                     break
         keywords_in_titles[c] = 100 * (keywords_in_titles[c] / len(cluster_titles))
         
-        cluster_snippets = [process_string(snippet, stemming=False) for i,date,title,snippet,dist in cluster_articles[c]]
+        cluster_snippets = [process_string(snippet, stemming=True) for i,date,title,snippet,dist in cluster_articles[c]]
         keywords_in_snippets[c] = 0
         for snippet in cluster_snippets:
-
-            for tk in test_keywords:
+            for tk in stemmed_test_keywords:
                 if tk in snippet:
                     keywords_in_snippets[c] += 1
                     break
         keywords_in_snippets[c] = 100 * (keywords_in_snippets[c] / len(cluster_snippets))
     
     return keywords_in_relevant_words, keywords_in_titles, keywords_in_snippets
+
+
+"""
+Given a list of relevant words for each cluster, this function computed the average overlapping between them in this way:
+    - compute the Jaccard index between the first 'n_top_words' relevant words each pair of clusters
+    - average the results to obtain a global score.
+    
+The Jaccard Index between two lists is defined as the size of the intersection divided by the size of the union.
+"""
+def calc_relevant_words_overlap(cluster_relevant_words, n_top_words=10):
+    
+    overlaps = []
+    for i in range(len(cluster_relevant_words)-1):    
+        list1 = [w for w,s in cluster_relevant_words[i][:n_top_words]]            
+        for j in range(i+1, len(cluster_relevant_words)):
+            list2 = [w for w,s in cluster_relevant_words[j][:n_top_words]]
+            overlap = 0
+            for w in list1:
+                if w in list2:
+                    overlap += 1
+            overlap = overlap / len(set(list1+list2))
+            overlaps.append(overlap)
+#            print('\nLIST 1:', cluster_relevant_words[i][:n_top_words])
+#            print('LIST 2:', cluster_relevant_words[j][:n_top_words])
+#            print('Overlap:', overlap)
+    return np.average(overlaps)
+
     
 """
 Given an array of documents, each represented by a dict as retreived from the mongo database, returns the
@@ -322,7 +358,10 @@ def ensemble_manager(news_vectors, date, search_score='silhouette'):
                 best_algorithm = alg
     
     return output_per_alg[best_algorithm]['labels'], output_per_alg[best_algorithm]['centroids'], best_algorithm
-    
+
+
+
+
     
 """
 Applies the clustering algorithm defined by 'cluster_alg' on the data defined by 'news_vectors'.
@@ -353,7 +392,7 @@ For reference on the silhouette method to select best k:
     https://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html#sphx-glr-auto-examples-cluster-plot-kmeans-silhouette-analysis-py
     
 """
-def cluster_news(news_vectors, date, cluster_alg='kmeans', k_search_score='silhouette', n_clusters=5, centroid_type='mean'):
+def cluster_news(news_vectors, date, cluster_alg='kmeans', k_search_score='silhouette', n_clusters=5, centroid_type='mean', vocabulary=None):
     
     # custom function that wraps the cosine_distances function provided by scikit-learn.
     # This is necessary in order to use the cosine as metric for kmeans funtion by py_clustering library
@@ -364,7 +403,10 @@ def cluster_news(news_vectors, date, cluster_alg='kmeans', k_search_score='silho
         return d
      
     # use this if you want to visualize the clustering for every choice of k, for example during debugging
-#    tsne_vectors = TSNE(n_components=2, metric='cosine').fit_transform(news_vectors)
+#    vocabulary_word_embeddings = np.array([WORD_EMBEDDING_MODEL[w] for w in vocabulary])
+#    all_vectors = np.append(vocabulary_word_embeddings, news_vectors, axis = 0)
+#    all_tsne_vectors = TSNE(n_components=2, metric='cosine', perplexity=30, early_exaggeration=3, random_state=0).fit_transform(all_vectors)
+#    news_tsne_vectors = all_tsne_vectors[-len(news_vectors):]
         
     if cluster_alg == 'ensemble':
         return ensemble_manager(news_vectors, date, search_score=k_search_score)
@@ -483,8 +525,8 @@ def cluster_news(news_vectors, date, cluster_alg='kmeans', k_search_score='silho
 #        print('Score:', score)
 #        for l in np.unique(labels):
 #            indices = [k for k in range(len(labels)) if labels[k] == l]
-#            plt.scatter(tsne_vectors[indices,0], tsne_vectors[indices,1], c=all_colors[l], label='Cluster #'+str(l))
-#        plt.title('N. of clusters: ' + str(k) + ' - Score: ' + str(score))
+#            plt.scatter(news_tsne_vectors[indices,0], news_tsne_vectors[indices,1], c=ALL_COLORS[l], label='Cluster #'+str(l))
+#        plt.title('N. of clusters: ' + str(k) + ' - Silhouette score: ' + str(round(score,2)))
 #        plt.legend()
 #        plt.show()
 #    
@@ -623,7 +665,7 @@ Params:
     - tweet_distance_threshold : threshold used to decide if a tweet should be discarded
       (see function 'assign_tweets_to_clusters'; the parameter is called simply 'distance_threshold')
     - n_top_words : how many words should be considered as relevant for each cluster, picking from the ranked list of words
-    - test_keywords (optional) : if not empty, runs the function 'run_keywords_test' (see for reference)
+    - test_keywords (optional) : if True, runs the function 'run_keywords_test' (see for reference)
     - use_tense_detection : if True, filters the sentences in each news (NOT tweets), keeping only those sentences that employ at least one
                             verb in the future tense
     - path_to_save : if not None, indicates the path to the folder where the daily output should be saved.
@@ -650,7 +692,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
                   min_date='2009-01-01', max_date='2019-01-01', news_look_back=7, tweet_look_back=7, relevance_mode='both',
                   cluster_algorithm='kmeans', k_search_score='silhouette', n_clusters=None, centroid_type='mean',
                   lexicon_filter=True, scale_features=True, outlier_method='silhouette', outlier_cutoff=10, tweet_distance_threshold=0.5,
-                  n_top_words=30, test_keywords=[], use_tense_detection=False, path_to_save=False):
+                  n_top_words=30, keywords_test=False, use_tense_detection=False, path_to_save=False):
     
     # in case we want to save the output to files, we create a folder named like 'cluster_algorithm',
     # that will contain all the output obtained with this configuration
@@ -670,7 +712,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
     all_news = np.array(list(all_news))
     # organize the news in arrays (see organize_documents for reference)          
     news_processed_texts, news_associated_companies, news_dates, news_ids, news_titles, news_snippets = organize_documents(all_news, companies, industry=industry, relevance_mode=relevance_mode, use_tense_detection=use_tense_detection)
-                        
+        
     # get all tweets relevant to the companies, in the time interval
     tweet_ids, tweet_dates = get_all_ids(companies=companies, min_date=min_date-timedelta(days=tweet_look_back), max_date=max_date, relevance_mode=relevance_mode, mongo_collection=tweets_collection_name)
     client = pymongo.MongoClient()
@@ -690,10 +732,16 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
     # (the super-lexicon can be created as the union of all these lists)
     all_words_per_day = {}
     
+    keyword_test_results = []
+    
     # iterate over the time interval between min_date and max_date
     current_date = min_date
     start_index = 0
-    while current_date <= max_date:  
+    while current_date <= max_date:
+        
+#        if current_date.strftime('%Y-%m-%d') not in TEST_KEYWORDS_DICT:
+#            current_date = current_date + timedelta(days=1)
+#            continue
         
         # find indexes i and j such that news_ids[i:j] are the news published in the time interval 
         # between (current_date - news_look_back) and current_date
@@ -775,7 +823,8 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
         tfidf_feature_names = np.array(vectorizer.get_feature_names())              #list of words used as features in the tf-idf model
                         
         # apply clustering to the selected set of news (see function 'cluster_news' for reference)
-        labels, original_centroids, chosen_algorithm = cluster_news(document_vectors, current_date, cluster_alg=cluster_algorithm, k_search_score=k_search_score, n_clusters=n_clusters)
+        labels, original_centroids, chosen_algorithm = cluster_news(document_vectors, current_date, cluster_alg=cluster_algorithm, 
+                                                                    k_search_score=k_search_score, n_clusters=n_clusters, vocabulary=vocabulary_for_tfidf)
 
         # dbscan is the only algorithm that might return even 0 or 1 clusters
         # moreover, the outlier removal process is intrinsic to the algorithm itself
@@ -857,7 +906,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
             all_centroids = np.append(original_centroids, centroids, axis=0)
             ndimensional_vectors = np.append(document_vectors, all_centroids, axis=0)
             ndimensional_vectors = np.append(vocabulary_word_embeddings, ndimensional_vectors, axis = 0)
-            vectors_2D = TSNE(n_components=2, metric='cosine', perplexity=30, early_exaggeration=3).fit_transform(ndimensional_vectors)
+            vectors_2D = TSNE(n_components=2, metric='cosine', perplexity=30, early_exaggeration=3, random_state=0).fit_transform(ndimensional_vectors)
             document_vectors_2D = vectors_2D[len(vocabulary_word_embeddings):len(vocabulary_word_embeddings)+len(document_vectors)]
             old_centroids_2D = vectors_2D[len(vocabulary_word_embeddings)+len(document_vectors):-len(centroids)]
             new_centroids_2D = vectors_2D[-len(centroids):]
@@ -928,7 +977,11 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
             cluster_articles[c] = sorted(cluster_articles[c], key = lambda x : x[-1])
             n_news_per_cluster[c] = len(cluster_articles[c])
             n_news_per_cluster_per_date[c] = [[date for nid,date,tit,snip,dist in cluster_articles[c]].count(d) for d in [current_date - timedelta(days=x) for x in range(news_look_back,0,-1)]]
-            
+        
+        
+        metrics_per_day[current_date.strftime('%Y-%m-%d')]['relevant_words_overlap'] = calc_relevant_words_overlap(cluster_relevant_words_tfidf, n_top_words=30)
+        
+        
         # compute the total number of news published on each date in the current time interval, without considering the cluster they belong to
         # and including also the discarded ones
         date_range = [current_date - timedelta(days=x) for x in range(news_look_back,0,-1)]
@@ -1005,7 +1058,7 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
             else:
                 perc_discarded_tweets_per_date.append(0)
         
-        metrics_per_day[current_date.strftime('%Y-%m-%d')]['%discarded_tweets'] = perc_discarded_tweets_per_date[-1]
+        metrics_per_day[current_date.strftime('%Y-%m-%d')]['%assigned_tweets'] = 100 - perc_discarded_tweets_per_date[-1]
         
         tweets_cluster_tfidf = [np.zeros(len(tweets_tfidf_feature_names)) for c in range(len(centroids))]
         for i in range(len(tweet_labels)):
@@ -1035,8 +1088,9 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
             relevant_words_match[c] = match
 
         # run keywords test (see function for reference)
-        if len(test_keywords) > 0:
-            keywords_in_relevant_words_tfidf, keywords_in_titles, keywords_in_snippets = run_keywords_test(cluster_relevant_words_tfidf, cluster_articles, test_keywords, n_top_words=10)
+        if keywords_test and current_date.strftime('%Y-%m-%d') in TEST_KEYWORDS_DICT:
+            keywords_in_relevant_words_tfidf, keywords_in_titles, keywords_in_snippets = run_keywords_test(cluster_relevant_words_tfidf, cluster_articles, TEST_KEYWORDS_DICT[current_date.strftime('%Y-%m-%d')], n_top_words=n_top_words)
+            keyword_test_results.append(keywords_in_relevant_words_tfidf)
         else:
             keywords_in_relevant_words_tfidf, keywords_in_titles, keywords_in_snippets = [], [], []
                 
@@ -1108,22 +1162,26 @@ def detect_events(industry, companies, news_collection_name, tweets_collection_n
                     #   - the score in the specialized lexicon
                     stemmed_w = pproc.stem(w)
                     relevant_words_per_day[current_date][w] = {'relevance_to_cluster': s,
-                                                      'tweets_percentage' : perc_tweets_per_cluster_per_date[c][-1],
-                                                      'lexicon_score' : current_pos_lexicon[stemmed_w] if stemmed_w in current_pos_lexicon else current_neg_lexicon[stemmed_w]}
+                                                               'tweets_percentage' : perc_tweets_per_cluster_per_date[c][-1],
+                                                                'lexicon_score' : current_pos_lexicon[stemmed_w] if stemmed_w in current_pos_lexicon else (current_neg_lexicon[stemmed_w] if stemmed_w in current_neg_lexicon else 0)}
             
         current_date = current_date + timedelta(days=1)
     
+    if keywords_test:
+        print('\n\nAverage match in keyword test:', np.average(keyword_test_results))
+        
     return metrics_per_day, relevant_words_per_day, all_words_per_day
 
 
 if __name__ == "__main__":
     
-    save_clustering_output = False         #True if you want to save the output to files
-    save_words_for_CNN = True
+    save_global_output = True         #True if you want to save the comparison boxplots and the tweet plot
+    save_daily_output = False          #True if you want to save the plots for every single day
+    save_words_for_CNN = False
     
     # algorithms that you want to compare;
     # NOTE: this does not affect the list of algorithms that are used within the ensemble strategy.
-    algorithms_list = ['ensemble']#, 'kmeans', 'kmedians', 'kmedoids', 'agglomerative']   
+    algorithms_list = ['agglomerative', 'kmeans', 'kmedians', 'kmedoids']   
     
     # you can set this variable to one of these values: None, 'brexit, 'trump'
     # see below for reference
@@ -1131,35 +1189,45 @@ if __name__ == "__main__":
     
     industry = 'SP500'      #possible values are 'Financial', 'Industrials' and 'Information Technology', but no tweets are available for these industries yet
     companies=['SP500']     #if industry != 'SP500', use companies = get_companies_by_industry(industry)
-    news_collection_name = 'sp500_news_2009-2019'      #change the collections name depending on the industry
-    tweets_collection_name = 'sp500_tweets_2009-2019'
+    news_collection_name = 'sp500_news_2009-2020'      #change the collections name depending on the industry
+    tweets_collection_name = 'sp500_tweets_2009-2020'
     
     # if you set event to 'brexit' or 'trump', the algorithm will run on those specific time intervals and will run the keywords_test with already defined keywords;
     # please modify the paths to your preference
     if event == 'brexit':
-        min_date='2016-06-12'
-        max_date='2016-06-25'
-        test_keywords = ['brexit','uk','britain','referendum','vote','leave','remain','british','poll','polls']
-        path_to_save = 'output_clustering/brexit on SP500'
+        min_date='2016-06-15'
+        max_date='2016-07-30'
+        test_keywords = ['brexit', 'uk', 'british', 'referendum', 'poll', 'stay', 'leave', 'eu', 'vote', 'remain']
+        path_to_save = 'output_clustering/brexit'
     elif event == 'trump':
-        min_date='2016-11-08'
-        max_date='2016-11-11'
+        min_date='2016-11-01'
+        max_date='2016-11-15'
         test_keywords = ['trump','donald','clinton','hillary','vote','votes','election','elections','poll','polls','president']
-        path_to_save = 'output_clustering/trumps election on SP500'
+        path_to_save = 'output_clustering/trump'
+    elif event == 'coronavirus':
+        min_date='2020-01-20'
+        max_date='2020-02-05'
+        test_keywords = ['coronavirus','virus','chinese','china','outbreak','death','infect','loss','spread','case']
+        path_to_save = 'output_clustering/coronavirus'
+    elif event == 'tradewar':
+        min_date='2019-05-05'
+        max_date='2019-05-20'
+        test_keywords = ['china','us','trump','tariff','trade','war','deal','market','industry','beijing']
+        path_to_save = 'output_clustering/tradewar'
         
     # if None, you should modify min_date and max_date to your preference; no keywords test will be executed;
     # a folder with the datetime of the moment of the execution will be created automatically inside output_clustering/prove
     # please modify the paths to your preference
     elif not event:
-        min_date='2016-11-01'
-        max_date='2016-11-30'
+        min_date='2017-01-01'
+        max_date='2017-12-31'
         test_keywords = []
-        if save_clustering_output:
+        if save_global_output:
             folder_name = 'output_clustering/prove/'+datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
             os.mkdir(folder_name)
             path_to_save = folder_name
     
-    if not save_clustering_output:
+    if not save_global_output:
         path_to_save = None
     
     # Retrieve the lexicons with the desired parameters.
@@ -1175,8 +1243,9 @@ if __name__ == "__main__":
     global_metrics_per_day = {}
     silhouette_scores_per_alg = {a:[] for a in algorithms_list}
     dunn_scores_per_alg = {a:[] for a in algorithms_list}
+    relevant_words_overlap_per_alg = {a:[] for a in algorithms_list}
     n_clusters_per_alg = {a:[] for a in algorithms_list}
-    discarded_tweets_per_day_per_alg = {a:[] for a in algorithms_list}
+    assigned_tweets_per_day_per_alg = {a:[] for a in algorithms_list}
     chosen_algorithm_count = {'kmeans':0, 'kmedians':0, 'agglomerative':0}  #used only for ensemble, to count how many time each algorithm was selected
     
     # 'detect_events' is executed multiple times on the same time interval, changing only the clustering algorithm.
@@ -1188,8 +1257,8 @@ if __name__ == "__main__":
                                                            min_date=min_date, max_date=max_date, news_look_back=7, tweet_look_back=7, relevance_mode='both', scale_features=True,
                                                            cluster_algorithm=ca, n_clusters=None, k_search_score='silhouette', centroid_type='median',
                                                            outlier_cutoff=25, outlier_method='silhouette+proximity', use_tense_detection=False,
-                                                           lexicon_filter=True, tweet_distance_threshold=0.5, test_keywords=test_keywords,
-                                                           path_to_save=None)
+                                                           lexicon_filter=True, tweet_distance_threshold=0.5, keywords_test=False,
+                                                           path_to_save=path_to_save if save_daily_output else None)
         
         if save_words_for_CNN:
             with open('../words_for_CNN/'+ca+'_from_'+min_date+'_to_'+max_date+'.csv', 'w') as word_writer:
@@ -1205,12 +1274,13 @@ if __name__ == "__main__":
             global_metrics_per_day[date][ca] = metrics[date]
             silhouette_scores_per_alg[ca].append(metrics[date]['silhouette'])
             dunn_scores_per_alg[ca].append(metrics[date]['dunn'])
+            relevant_words_overlap_per_alg[ca].append(metrics[date]['relevant_words_overlap'])
             n_clusters_per_alg[ca].append(metrics[date]['n_clusters'])
-            discarded_tweets_per_day_per_alg[ca].append(metrics[date]['%discarded_tweets'])
+            assigned_tweets_per_day_per_alg[ca].append(metrics[date]['%assigned_tweets'])
             if ca == 'ensemble':
                 chosen_algorithm_count[metrics[date]['chosen_algorithm']] += 1
             
-    if save_clustering_output:
+    if save_global_output:
         
         # print the plot of discarded tweets on each day, highlighting only the dates where the rate is below 97% (hardcoded below)
         min_date = datetime.strptime(min_date, '%Y-%m-%d').date()
@@ -1220,31 +1290,35 @@ if __name__ == "__main__":
             if alg not in os.listdir(path_to_save):
                 os.mkdir(path_to_save + '/' + alg)
             
-            labels_for_discarded = []
-            os.mkdir(path_to_save+'/'+alg+'/price_plots_on_events')
-            with open(path_to_save+'/'+alg+'/percentage of discarded TWEETS per day, detailed.csv', 'w') as writer:
-                for td, disc in zip(range((max_date - min_date).days), discarded_tweets_per_day_per_alg[alg]):
+            labels_for_assigned = []
+#            os.mkdir(path_to_save+'/'+alg+'/price_plots_on_events')
+            with open(path_to_save+'/'+alg+'/percentage of assigned TWEETS per day, detailed.csv', 'w') as writer:
+                for td, atweets in zip(range((max_date - min_date).days), assigned_tweets_per_day_per_alg[alg]):
                     next_date = min_date + timedelta(days=td)
-                    writer.write(next_date.strftime('%Y-%m-%d') + ',' + str(disc) + '\n')
-                    if disc < 97:
-                        labels_for_discarded.append(next_date)
-                        plot_price_chart('SP500', min_date=next_date-timedelta(days=14), max_date=next_date+timedelta(days=14), main_date=next_date.strftime('%Y-%m-%d'), path_to_save=path_to_save+'/'+alg+'/price_plots_on_events')
+                    writer.write(next_date.strftime('%Y-%m-%d') + ',' + str(atweets) + '\n')
+                    if atweets >= 3:
+                        labels_for_assigned.append(next_date)
+#                        plot_price_chart('SP500', min_date=next_date-timedelta(days=14), max_date=next_date+timedelta(days=14), main_date=next_date.strftime('%Y-%m-%d'), path_to_save=path_to_save+'/'+alg+'/price_plots_on_events')
                     else:
-                        labels_for_discarded.append('')
+                        labels_for_assigned.append('')
             fig, ax = plt.subplots(figsize = (24, 10))
-            x = np.arange(len(discarded_tweets_per_day_per_alg[alg]))
-            ax.plot(x, discarded_tweets_per_day_per_alg[alg], color='black')       
-            ax.set_ylabel('% of discarded tweets')
-            ax.set_title('Percentage of discarded tweets per day (% over total daily tweets)')
-            ax.set_xticks(x)
-            for i in range(len(labels_for_discarded)):
-                ax.annotate(str(labels_for_discarded[i]), (x[i], discarded_tweets_per_day_per_alg[alg][i]), color='r', fontsize=14)
-            plt.savefig(path_to_save+'/'+alg+'/percentage of discarded TWEETS per day.png')
+            x = np.arange(len(assigned_tweets_per_day_per_alg[alg]))
+            ax.plot(x, assigned_tweets_per_day_per_alg[alg], color='black')       
+            ax.set_ylabel('% of assigned tweets', fontsize=12)
+            ax.set_title('Percentage of assigned tweets per day (% over total daily tweets)', fontsize=14)
+            ax.set_xticks([])
+#            ax.set_xticklabels([min_date + timedelta(x) for x in range((max_date - min_date).days)])
+            plt.axhline(y=3, color='red', label='alert-threshold')
+            for i in range(len(labels_for_assigned)):
+                ax.annotate(str(labels_for_assigned[i]), (x[i], assigned_tweets_per_day_per_alg[alg][i]), color='red', fontsize=10)
+            plt.legend()
+            plt.savefig(path_to_save+'/'+alg+'/percentage of assigned TWEETS per day.png')
             
         # print boxplots to compare the metrics obtained by each algorithm
         # see function 'print_boxplot' for reference
         print_boxplot(silhouette_scores_per_alg, algorithms_list, 'Silhouette scores', path_to_save=path_to_save + '/comparison silhouette scores.png')
         print_boxplot(dunn_scores_per_alg, algorithms_list, 'Dunn scores', path_to_save=path_to_save + '/comparison dunn scores.png')
+        print_boxplot(relevant_words_overlap_per_alg, algorithms_list, 'Relevant words overlap', path_to_save=path_to_save + '/comparison relevant words overlap.png')
         print_boxplot(n_clusters_per_alg, algorithms_list, 'Number of clusters', path_to_save=path_to_save + '/comparison number of clusters.png')
     
         # print a bar plot with the count of the times each algorithm was selected in ensemble
@@ -1267,7 +1341,7 @@ if __name__ == "__main__":
         
         # print the dict of all the metrics as an html table 
         pp = pprint.PrettyPrinter(indent=4)
-        pp.pprint(global_metrics_per_day)
+#        pp.pprint(global_metrics_per_day)
         build_direction = "LEFT_TO_RIGHT"
         table_attributes = {"style" : "width:100%", "border": "1px solid black", "border-collapse": "collapse", "text-align": "center"}
         html = convert(global_metrics_per_day, build_direction=build_direction, table_attributes=table_attributes)

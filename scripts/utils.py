@@ -236,3 +236,35 @@ def find_variations(min_date, max_date, company, industry, min_variation=5):
             print(date, market[company][date])
             
             
+def get_deltas_per_date(min_date, max_date, delta_timespan=7):
+    
+    min_date = datetime.strptime(min_date, '%Y-%m-%d').date()
+    max_date = datetime.strptime(max_date, '%Y-%m-%d').date()
+    
+    prices = pandas.read_csv('../SP500_market_data/SP500.csv')
+
+    dates = prices['Date'].tolist()
+    opens = prices['Open'].tolist()
+    closes = prices['Adj Close'].tolist()
+    
+    deltas_per_date = {}
+    for i in range(len(dates)-delta_timespan):
+        current_date = datetime.strptime(dates[i], '%Y-%m-%d').date()
+        if current_date < min_date:
+            continue
+        if current_date > max_date:
+            break
+        for j in range(i+1, len(dates)):
+            next_date = datetime.strptime(dates[j], '%Y-%m-%d').date()
+            if (next_date - current_date).days >= delta_timespan:
+                delta =  100 * ((closes[j] - opens[i]) / opens[i]) 
+#                label = 1 if delta > delta_threshold else 0
+#                print('\nCurrent:', current_date)
+#                print('Next:', next_date)
+#                print('Delta:', delta, '(', closes[j], '-', opens[i], ')')
+#                print('Label:', label)
+                deltas_per_date[current_date] = delta
+                break
+    
+    return deltas_per_date
+                

@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import spacy
 
 from create_lexicons import process_news_text, process_string, create_lexicons, fetch_lexicons, calc_lexicon_match
-from utils import get_all_ids, fetch_previous_news, get_news_per_day, get_market_per_day, TEST_KEYWORDS_DICT
+from utils import get_all_ids, fetch_previous_news, get_news_per_day, get_market_per_day, get_deltas_per_date, TEST_KEYWORDS_DICT
 from plotter import plot_clusters, plot_statistics, print_boxplot, plot_price_chart
 
 # We employ a word-embedding model pre-trained on Google news and adjusted in such a way, that
@@ -51,8 +51,138 @@ INITIAL_CENTROIDS = {}
 ALL_COLORS = ['red', 'green', 'blue', 'gold', 'magenta', 'cyan', 'gray', 'orange', 'teal', 'pink', 'purple']
 
 
+"""
+Performs the evaluation of the alert-generation phase. The evaluation is performed for different configurations of parameters, chosen from
+'day_tolerance_range', 'delta_threshold_range' and 'alert_threshold_range' (see below for reference).
 
 
+*** Definition of the ground truth:
+
+    'weekly_deltas_per_date' is a dict where keys are dates and values are the corresponding stock price variation computed on a 7-days horizon. 
+    Ex: for 2018-01-01, the variation is given by this formula: 100 * (close(2018-01-08) - open(2018-01-01) / open(2018-01-01)).
+    
+    The events that are included in the ground truth are defined by a couple (event_start_date, event_end_date) and are selcted deterministically 
+    by looking at the values of 'weekly_deltas_per_date' in the following way: if weekly_deltas_per_date[2018-01-01] >= delta_threshold, 
+    then 2018-01-01 is marked as an event-day. In order to obtain the time interval associated to the event, we join the days marked as event-days that
+    are contiguous or closer than 'day_tolerance'; when we reach the end of the chain of event-days, we get the event_end_date. We keep scrolling
+    the dates in search for the other events.
+    
+    Ex: if day_tolerance = 2 and the event-days are 2018-01-01, 2018-01-02, 2018-01-04, 2018-01-06, 2018-01-15, 2018-01-16, our final list of events would be defined by the
+    following pairs of (event_start_date, event_end_date) : [(2018-01-01, 2018-01-06), (2018-01-15,2018-01-16)]
+    
+    
+*** Definition of the generated alerts
+
+    'assigned_tweets_per_date' is a dict where keys are dates and values are the percentage of assigned tweets on that date.
+    An alert is generated for date d if assigned_tweets_per_date[d] >= alert_threshold.
+    
+
+*** Evaluation
+
+    We calculate precision and recall.
+    
+    Recall is defined as the percentage of events, among those included in the ground truth, that we spotted by means of the generated alerts.
+    Specifically, for every (event_start_date, event_end_date) pair, we check if there is at least one alert generated between these two dates. If yes, then
+    the event is marked as spotted. Finally, the recall is computed as number of spotted_events divided by number of events in the ground truth.
+    
+    Precision is defined as the percentage of generated alerts that are included between one (event_start_date, event_end_date) pair.
+
+    
+"""
+def evaluate_alerts(weekly_deltas_per_date, assigned_tweets_per_date, day_tolerance_range=[1,3,7], delta_threshold_range=[2,3,4], alert_threshold_range=[1,2,3,4,5]):
+    
+    for day_tolerance in day_tolerance_range:
+        for delta_threshold in delta_threshold_range:
+            original_test_labels = {d:1 if abs(weekly_deltas_per_date[d]) >= delta_threshold else 0 for d in sorted(weekly_deltas_per_date)}
+            
+#            print('\nAll dates:')
+#            for d in original_test_labels:
+#                print(d)
+            
+#            print('\nOriginal event dates:')
+#            for d in original_test_labels:
+#                if original_test_labels[d] == 1:
+#                    print(d)
+                    
+            extended_test_labels = {d:0 for d in original_test_labels}
+            current_date = sorted(list(original_test_labels.keys()))[0]
+            max_date = sorted(list(original_test_labels.keys()))[-1]
+            while current_date <= max_date:
+                if (current_date in original_test_labels) and (original_test_labels[current_date] == 1):
+                    for td in range(-day_tolerance,day_tolerance+1):
+                        if current_date + timedelta(days=td) in original_test_labels:
+                            extended_test_labels[current_date + timedelta(days=td)] = 1
+                current_date = current_date + timedelta(days=1)
+                
+#            print('\nExtended event dates:')
+#            for d in extended_test_labels:
+#                if extended_test_labels[d] == 1:
+#                    print(d)
+                            
+            test_events = []
+            previous_label = 0
+#            print('\nForming events...')
+            for d in extended_test_labels:
+#                print()
+#                print(d)
+#                print('Current label:', extended_test_labels[d])
+#                print('Previous label:', previous_label)
+                if previous_label == 0 and extended_test_labels[d] == 1:
+#                    print('\nEvent start on', d)
+                    event_start_date = d
+                elif previous_label == 1 and extended_test_labels[d] == 0:
+#                    print('Event end on', d)
+                    event_end_date = d
+                    test_events.append((event_start_date, event_end_date))
+                previous_label = extended_test_labels[d]
+            
+            if previous_label == 1 and extended_test_labels[d] == 1:
+                test_events.append((event_start_date, event_end_date))
+                    
+#            print('\nEvent ranges:')
+#            for e in test_events:
+#                print(e)
+                            
+            
+            for alert_threshold in alert_threshold_range:
+                alert_dates = [d for d in assigned_tweets_per_date if assigned_tweets_per_date[d] >= alert_threshold]
+            
+                print('\n**************\nDelta Threshold:', delta_threshold)
+                print('Alert Threshold:', alert_threshold)
+                print('Day Tolerance:', day_tolerance)
+                print('\nN. events in test:', len(test_events))
+                print('N. alerts:', len(alert_dates))
+                
+#                print('\nComputing recall...')
+                spotted_events_in_test = 0
+                for event_start_date,event_end_date in test_events:
+                    for d in alert_dates:
+                        if d >= event_start_date and d <= event_end_date:
+                            spotted_events_in_test += 1
+#                            print('Hit:', d, 'between', event_start_date, 'and', event_end_date)
+                            break
+                if len(test_events) > 0:
+                    recall = spotted_events_in_test / len(test_events)
+                else:
+                    recall = 'No computable, because 0 events were selected for the ground truth'
+                print('\nRecall:', recall)
+                
+                relevant_events_in_alerts = 0
+                for d in alert_dates:
+                    for event_start_date,event_end_date in test_events:
+                        if d >= event_start_date and d <= event_end_date:
+                            relevant_events_in_alerts += 1
+#                            print('Hit:', d, 'between', event_start_date, 'and', event_end_date)
+                            break
+                if len(alert_dates) > 0:
+                    precision = relevant_events_in_alerts / len(alert_dates)
+                else:
+                    precision = 'No computable, because 0 alerts were generated'
+                print('\nPrecision:', precision)
+                
+
+    
+    
 """
 Given a list of test_keywords defined a priori, this function computes:
     - percentage of test_keywords that appear among the relevant words, for each cluster;
@@ -1181,11 +1311,12 @@ if __name__ == "__main__":
     
     # algorithms that you want to compare;
     # NOTE: this does not affect the list of algorithms that are used within the ensemble strategy.
-    algorithms_list = ['agglomerative', 'kmeans', 'kmedians', 'kmedoids']   
+    algorithms_list = ['agglomerative']#, 'kmeans', 'kmedians', 'kmedoids']   
     
     # you can set this variable to one of these values: None, 'brexit, 'trump'
     # see below for reference
     event = None
+    alert_threshold = 3
     
     industry = 'SP500'      #possible values are 'Financial', 'Industrials' and 'Information Technology', but no tweets are available for these industries yet
     companies=['SP500']     #if industry != 'SP500', use companies = get_companies_by_industry(industry)
@@ -1219,8 +1350,8 @@ if __name__ == "__main__":
     # a folder with the datetime of the moment of the execution will be created automatically inside output_clustering/prove
     # please modify the paths to your preference
     elif not event:
-        min_date='2017-01-01'
-        max_date='2017-12-31'
+        min_date='2016-06-15'
+        max_date='2016-06-30'
         test_keywords = []
         if save_global_output:
             folder_name = 'output_clustering/prove/'+datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -1229,6 +1360,10 @@ if __name__ == "__main__":
     
     if not save_global_output:
         path_to_save = None
+        
+    
+    # compute the ground-truth for the alert-generation evaluation
+    weekly_deltas_per_date = get_deltas_per_date(min_date=min_date, max_date=max_date, delta_timespan=7)
     
     # Retrieve the lexicons with the desired parameters.
     # If you want to create a new set of lexicons with different parameters, substitute this instruction
@@ -1291,12 +1426,14 @@ if __name__ == "__main__":
                 os.mkdir(path_to_save + '/' + alg)
             
             labels_for_assigned = []
+            assigned_tweets_per_date = {}
 #            os.mkdir(path_to_save+'/'+alg+'/price_plots_on_events')
             with open(path_to_save+'/'+alg+'/percentage of assigned TWEETS per day, detailed.csv', 'w') as writer:
-                for td, atweets in zip(range((max_date - min_date).days), assigned_tweets_per_day_per_alg[alg]):
+                for td, atweets in zip(range((max_date - min_date).days+1), assigned_tweets_per_day_per_alg[alg]):
                     next_date = min_date + timedelta(days=td)
                     writer.write(next_date.strftime('%Y-%m-%d') + ',' + str(atweets) + '\n')
-                    if atweets >= 3:
+                    assigned_tweets_per_date[next_date] = atweets
+                    if atweets >= alert_threshold:
                         labels_for_assigned.append(next_date)
 #                        plot_price_chart('SP500', min_date=next_date-timedelta(days=14), max_date=next_date+timedelta(days=14), main_date=next_date.strftime('%Y-%m-%d'), path_to_save=path_to_save+'/'+alg+'/price_plots_on_events')
                     else:
@@ -1313,6 +1450,8 @@ if __name__ == "__main__":
                 ax.annotate(str(labels_for_assigned[i]), (x[i], assigned_tweets_per_day_per_alg[alg][i]), color='red', fontsize=10)
             plt.legend()
             plt.savefig(path_to_save+'/'+alg+'/percentage of assigned TWEETS per day.png')
+            
+            evaluate_alerts(weekly_deltas_per_date, assigned_tweets_per_date)
             
         # print boxplots to compare the metrics obtained by each algorithm
         # see function 'print_boxplot' for reference

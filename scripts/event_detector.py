@@ -1350,8 +1350,8 @@ if __name__ == "__main__":
     # a folder with the datetime of the moment of the execution will be created automatically inside output_clustering/prove
     # please modify the paths to your preference
     elif not event:
-        min_date='2016-06-15'
-        max_date='2016-06-30'
+        min_date='2019-01-01'
+        max_date='2019-02-28'
         test_keywords = []
         if save_global_output:
             folder_name = 'output_clustering/prove/'+datetime.now().strftime('%Y-%m-%d_%H-%M-%S')

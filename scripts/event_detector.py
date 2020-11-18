@@ -1427,7 +1427,6 @@ if __name__ == "__main__":
             
             labels_for_assigned = []
             assigned_tweets_per_date = {}
-#            os.mkdir(path_to_save+'/'+alg+'/price_plots_on_events')
             with open(path_to_save+'/'+alg+'/percentage of assigned TWEETS per day, detailed.csv', 'w') as writer:
                 for td, atweets in zip(range((max_date - min_date).days+1), assigned_tweets_per_day_per_alg[alg]):
                     next_date = min_date + timedelta(days=td)
@@ -1435,7 +1434,6 @@ if __name__ == "__main__":
                     assigned_tweets_per_date[next_date] = atweets
                     if atweets >= alert_threshold:
                         labels_for_assigned.append(next_date)
-#                        plot_price_chart('SP500', min_date=next_date-timedelta(days=14), max_date=next_date+timedelta(days=14), main_date=next_date.strftime('%Y-%m-%d'), path_to_save=path_to_save+'/'+alg+'/price_plots_on_events')
                     else:
                         labels_for_assigned.append('')
             fig, ax = plt.subplots(figsize = (24, 10))
@@ -1444,7 +1442,6 @@ if __name__ == "__main__":
             ax.set_ylabel('% of assigned tweets', fontsize=12)
             ax.set_title('Percentage of assigned tweets per day (% over total daily tweets)', fontsize=14)
             ax.set_xticks([])
-#            ax.set_xticklabels([min_date + timedelta(x) for x in range((max_date - min_date).days)])
             plt.axhline(y=3, color='red', label='alert-threshold')
             for i in range(len(labels_for_assigned)):
                 ax.annotate(str(labels_for_assigned[i]), (x[i], assigned_tweets_per_day_per_alg[alg][i]), color='red', fontsize=10)
@@ -1480,20 +1477,14 @@ if __name__ == "__main__":
         
         # print the dict of all the metrics as an html table 
         pp = pprint.PrettyPrinter(indent=4)
-#        pp.pprint(global_metrics_per_day)
         build_direction = "LEFT_TO_RIGHT"
         table_attributes = {"style" : "width:100%", "border": "1px solid black", "border-collapse": "collapse", "text-align": "center"}
         html = convert(global_metrics_per_day, build_direction=build_direction, table_attributes=table_attributes)
         
-        html = """<p>NOTA BENE: Alcune apparenti incongruenze nella tabella sono dovute al fatto che, mentre
-                     l'algoritmo di ensemble seleziona il clustering migliore <b>prima</b> dell'outlier removal,
-                     nella tabella sono mostrati le silhouette e i dunn <b>dopo</b> l'outlier removal.
-                  </p><br>""" + html + """<ul>
-                                             <li>Silhouette score: ranges from -1 (worst) to 1 (best)</li>
-                                             <li>Dunn index: ranges from 0 (worst) to 1 (best)</li>
-                                         </ul>"""
-        
-        
+        html = html + """<ul>
+                             <li>Silhouette score: ranges from -1 (worst) to 1 (best)</li>
+                             <li>Dunn index: ranges from 0 (worst) to 1 (best)</li>
+                         </ul>"""
         
         with open(path_to_save+ '/results_by_day.html', 'w') as table_writer:
             table_writer.write(html)

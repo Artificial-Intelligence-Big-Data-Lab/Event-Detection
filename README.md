@@ -27,6 +27,11 @@ The root of the project should contain the following subfolders: `DNA and tweets
 - word2vec_data :
 	- `google_word2vec_classic.bin` : word-embedding model pre-trained on Google news (download here: https://code.google.com/archive/p/word2vec/)
 	- `google_word2vec_sentiment.bin` : word-embedding model based on google_word2vec_classic.bin; adjusted in such a way, that makes embeddings more aware of the sentiments of the words (reference: https://towardsdatascience.com/sentiment-preserving-word-embeddings-9bb5a45b2a5).
+	
+
+Please note that a set of pre-computed lexicons is already available in the folder `lexicons`, to allow an immidiate execution of the code. In case you want to use lexicons with different parameters, you need to create new lexicons from scratch. Please read the documentation on the script `create_lexicons.py` for reference.
+
+For size constraint, it was not possible to upload the word-embedding model to this repository. We recommend that the user download the model from the link indicated above or, alternatively, generates word-embeddings using the interface offered by the gensim library: https://radimrehurek.com/gensim/models/word2vec.html. To allow execution, it is crucial that the final model may be read as a classic Python dictionary, in which keys are words and values are vectors.
 
 
 
@@ -50,8 +55,8 @@ mongoimport --db financial_forecast --collection sp500_news_2009-2020 --file sp5
 mongoimport --db financial_forecast --collection sp500_tweets_2009-2020 --file sp500_tweets_example.json --legacy
 ```
 - verify on Robo3T that collections have been created successfully
-- on Robo3T command line, run `db.getCollection('sp500_news_2009-2019').createIndex( { ingestion_datetime: 1 } )`
-- on Robo3T command line, `run db.getCollection('sp500_tweets_2009-2019').createIndex( { ingestion_datetime: 1 } )`
+- on Robo3T command line, run `db.getCollection('sp500_news_2009-2020').createIndex( { ingestion_datetime: 1 } )`
+- on Robo3T command line, `run db.getCollection('sp500_tweets_2009-2020').createIndex( { ingestion_datetime: 1 } )`
 
 
 ## 2. Python modules installation

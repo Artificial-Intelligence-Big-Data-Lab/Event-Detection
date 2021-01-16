@@ -2,9 +2,7 @@
 
 ## 0. Content
 
-This repository contains the scripts to execute the event detection algorithm for financial forecasting.
-
-For a correct execution of the code, you must download the data (DNA and tweets, SP500_market_data, lexicons) and the word-embedding models (word2vec_data). 
+This repository contains the scripts to execute the event detection algorithm for financial forecasting, described in the paper "Event detection in finance using hierarchical clustering algorithms on news and tweets" (S. Carta, S. Consoli, L. Piras, A.S. Podda, D. Reforgiato Recupero).
 
 The root of the project should contain the following subfolders: `DNA and tweets`, `lexicons/3 classes`, `scripts`, `SP500_market_data`, `word2vec_data`. The content of each folder is the following:
 
@@ -29,9 +27,9 @@ The root of the project should contain the following subfolders: `DNA and tweets
 	- `google_word2vec_sentiment.bin` : word-embedding model based on google_word2vec_classic.bin; adjusted in such a way, that makes embeddings more aware of the sentiments of the words (reference: https://towardsdatascience.com/sentiment-preserving-word-embeddings-9bb5a45b2a5).
 	
 
-Please note that a set of pre-computed lexicons is already available in the folder `lexicons`, to allow an immidiate execution of the code. In case you want to use lexicons with different parameters, you need to create new lexicons from scratch. Please read the documentation on the script `create_lexicons.py` for reference.
+Please note that, for confidentiality reasons, we cannot publish the whole Dow Jones' Data, News and Analytics dataset, which was employed in the experimental framework of the paper. However, we hereby make available a small example set of news and tweets for illustrative purpose and to allow the execution of the algorithm. Furthermore, a set of pre-computed lexicons is already available in the folder `lexicons`, to allow an immidiate execution of the code. In case you want to use lexicons with different parameters, you need to create new lexicons from scratch, based on the small example data. Please read the documentation on the script `create_lexicons.py` for reference.
 
-For size constraint, it was not possible to upload the word-embedding model to this repository. We recommend that the user download the model from the link indicated above or, alternatively, generates word-embeddings using the interface offered by the gensim library: https://radimrehurek.com/gensim/models/word2vec.html. To allow execution, it is crucial that the final model may be read as a classic Python dictionary, in which keys are words and values are vectors.
+For size constraint, it was not possible to upload the word-embedding model to this repository. We recommend that the user download the model from the link indicated above (https://code.google.com/archive/p/word2vec/) or, alternatively, generate word-embeddings using the interface offered by the gensim library: https://radimrehurek.com/gensim/models/word2vec.html. It is crucial that the final model may be read as a classic Python dictionary, in which keys are words and values are vectors.
 
 
 

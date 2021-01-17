@@ -27,7 +27,7 @@ The root of the project should contain the following subfolders: `DNA and tweets
 	- `google_word2vec_sentiment.bin` : word-embedding model based on google_word2vec_classic.bin; adjusted in such a way, that makes embeddings more aware of the sentiments of the words (reference: https://towardsdatascience.com/sentiment-preserving-word-embeddings-9bb5a45b2a5).
 	
 
-Please note that, for confidentiality reasons, we cannot publish the whole Dow Jones' Data, News and Analytics dataset, which was employed in the experimental framework of the paper. However, we hereby make available a small example set of news and tweets for illustrative purpose. To allow the reproducibility of the experiments, your data should follow the same format.
+Please note that, due to licensing constraints, we cannot publish any news document contained in the Dow Jones' Data, News and Analytics dataset, which was employed in the experimental framework of the paper. However, we hereby make available a small example set of news and tweets for illustrative purpose. To allow the reproducibility of the experiments, your data should follow the same format.
 
 Furthermore, a set of pre-computed lexicons is already available in the folder `lexicons`. In case you want to use lexicons with different parameters, you need to create new lexicons from scratch, based on the small example data. Please read the documentation on the script `create_lexicons.py` for reference.
 
